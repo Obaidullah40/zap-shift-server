@@ -21,6 +21,7 @@ app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@sheikh0.8n6xmjo.mongodb.net/?retryWrites=true&w=majority&appName=Sheikh0`;
 
+ 
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -34,16 +35,29 @@ async function run() {
         await client.connect();
 
         const db = client.db('parcelDB'); // database name
-        const parcelCollection = db.collection('parcels'); // collection
+        const usersCollection = db.collection('users');
+        const parcelCollection = db.collection('parcels');
         const paymentsCollection = db.collection('payments');
+        const ridersCollection = db.collection('riders');
 
-        app.get('/parcels', async (req, res) => {
-            const parcels = await parcelCollection.find().toArray();
-            res.send(parcels);
-        });
-        // parcels api
+
+        app.post('/users', async (req, res) => {
+            const email = req.body.email;
+            const userExists = await usersCollection.findOne({ email })
+            if (userExists) {
+                // update last log in
+                return res.status(200).send({ message: 'User already exists', inserted: false });
+            }
+            const user = req.body;
+            const result = await usersCollection.insertOne(user);
+            res.send(result);
+        })
+
+
         // GET: All parcels OR parcels by user (created_by), sorted by latest
         app.get('/parcels', async (req, res) => {
+
+            console.log("headers in payments", req.headers)
             try {
                 const userEmail = req.query.email;
 
