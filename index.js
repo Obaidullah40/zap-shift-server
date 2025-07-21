@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const admin = require("firebase-admin");
 const app = express();
 const port = process.env.PORT || 5000;
 const {
@@ -14,10 +15,15 @@ dotenv.config();
 
 const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
 
-
 // middleware
 app.use(cors());
 app.use(express.json());
+
+const serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@sheikh0.8n6xmjo.mongodb.net/?retryWrites=true&w=majority&appName=Sheikh0`;
 
@@ -40,6 +46,27 @@ async function run() {
         const paymentsCollection = db.collection('payments');
         const ridersCollection = db.collection('riders');
 
+         // custom middlewares
+        const verifyFBToken = async (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            const token = authHeader.split(' ')[1];
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            // verify the token
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                next();
+            }
+            catch (error) {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+        }
 
         app.post('/users', async (req, res) => {
             const email = req.body.email;
@@ -55,7 +82,7 @@ async function run() {
 
 
         // GET: All parcels OR parcels by user (created_by), sorted by latest
-        app.get('/parcels', async (req, res) => {
+        app.get('/parcels', verifyFBToken, async (req, res) => {
 
             console.log("headers in payments", req.headers)
             try {
@@ -137,9 +164,13 @@ async function run() {
             }
         });
 
-        app.get('/payments', async (req, res) => {
-            try {
+        app.get('/payments',verifyFBToken, async (req, res) => {
+               try {
                 const userEmail = req.query.email;
+                console.log('decocded', req.decoded)
+                if (req.decoded.email !== userEmail) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
 
                 const query = userEmail ? { email: userEmail } : {};
                 const options = { sort: { paid_at: -1 } }; // Latest first
